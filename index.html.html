@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Separação Fechado - NSA</title>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<style>
+  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #e0e7ff; margin: 0; padding: 0; }
+  .header { background: #1e293b; padding: 15px 20px; border-bottom: 2px solid #334155; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 50; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+  .container { width: 100%; padding: 10px; box-sizing: border-box; padding-bottom: 50px; transition: all 0.3s; }
+  .ihm-card { background: #1e293b; border-radius: 8px; margin-bottom: 20px; border: 1px solid #334155; overflow: hidden; }
+  .ihm-header { background: #020617; padding: 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; }
+  .pallet-area { padding: 15px; background: #0f172a; border-bottom: 1px solid #334155; }
+  .slots-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 15px; padding-bottom: 10px; } 
+  .slot { background: #1e293b; padding: 12px; border-radius: 8px; text-align: center; border: 2px solid #475569; position: relative; cursor: pointer; transition: all 0.2s; user-select: none; display: flex; flex-direction: column; justify-content: space-between; min-height: 150px; width: 100%; box-sizing: border-box; } .slot:active { transform: scale(0.95); }
+  .slot.PENDENTE { border-color: #facc15; background: #422006; } .slot.PENDENTE .slot-qty { color: #facc15; } .slot.PENDENTE::after { content: '⏳ A SEPARAR'; display: block; font-size: 0.75rem; color: #facc15; margin-top: 5px; font-weight:bold;}
+  .slot.SEPARADO { border-color: #10b981; background: #064e3b; } .slot.SEPARADO .slot-qty { color: #fff; } .slot.SEPARADO::after { content: '✅ PRONTO'; display: block; font-size: 0.75rem; color: #a7f3d0; margin-top: 5px; font-weight:bold;}
+  .slot.PARCIAL { border-color: #f97316; background: #7c2d12; } .slot.PARCIAL .slot-qty { color: #fdba74; } .slot.PARCIAL::after { content: '⚠️ USO PARCIAL'; display: block; font-size: 0.75rem; color: #fff; background: #ea580c; padding: 2px; border-radius:4px; margin-top: 5px; font-weight:bold;}
+  .parcial-badge { background: #ea580c; color: white; font-size: 0.85rem; font-weight: bold; padding: 4px; border-radius: 4px; display: inline-block; margin-bottom: 5px; border: 1px solid #fdba74; }
+  .slot-balance { font-size: 0.85rem; color: #facc15; font-weight: bold; margin-top: 5px; background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; display: inline-block; border: 1px solid transparent; }
+  .slot-balance.sobra { color: #fca5a5; background: rgba(239, 68, 68, 0.3); } .slot-balance.ok { color: #a7f3d0; background: rgba(16, 185, 129, 0.3); border-color: #10b981; }
+  .slot.USADO { border-color: #ef4444; background: #7f1d1d; animation: pulse-red 2s infinite; } .slot.USADO .slot-qty { color: #fca5a5; text-decoration: line-through; opacity: 0.7; } .slot.USADO::after { content: '🚨 CAIXA VAZIA'; display: block; font-size: 0.7rem; color: #fff; background: #ef4444; padding: 2px; border-radius:4px; margin-top: 5px; font-weight:bold;}
+  .slot.ABASTECENDO { border-color: #94a3b8; background: #334155; animation: pulse-grey 2s infinite; } .slot.ABASTECENDO .slot-qty { color: #cbd5e1; text-decoration: line-through; opacity: 0.5; } .slot.ABASTECENDO::after { content: '🔄 EM ABASTECIMENTO'; display: block; font-size: 0.75rem; color: #fff; background: #475569; padding: 2px; border-radius:4px; margin-top: 5px; font-weight:bold;}
+  .slot-letter { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: #334155; width: 30px; height: 30px; border-radius: 50%; font-weight: bold; display: flex; align-items: center; justify-content: center; border: 1px solid #94a3b8; font-size:0.9rem; z-index: 2; }
+  .slot-code { font-size: 1rem; font-weight: bold; margin-top: 15px; color: #fff; } .slot-desc { font-size: 0.8rem; color: #94a3b8; margin: 5px 0; line-height: 1.2; white-space: normal; word-wrap: break-word; } .slot-qty { font-size: 1.4rem; font-weight: bold; margin: 5px 0; } .slot-emb { font-size: 0.8rem; opacity: 0.8; }
+  .table-responsive { overflow-x: auto; transition: all 0.3s; } .hide-tables .table-responsive { display: none !important; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; } th { background: #334155; padding: 12px 10px; text-align: left; color: #94a3b8; white-space: nowrap; font-weight: 600; } td { padding: 10px; border-bottom: 1px solid #334155; vertical-align: middle; } th:nth-child(2) { width: 15%; } th:nth-child(3) { width: 40%; }
+  .cell-saldo { font-weight: bold; font-size: 1.1rem; } .status-badge { padding: 5px 10px; border-radius: 5px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; white-space: nowrap; }
+  .st-separar { background: #facc15; color: #000; } .st-parcial { background: #3b82f6; color: #fff; } .st-finalizado { background: #10b981; color: #fff; } .st-aberto { background: #3b82f6; color: #fff; } .td-desc { color: #cbd5e1; font-size: 0.85rem; line-height: 1.3; }
+  .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.9); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(5px); }
+  .modal-box { background: #1e293b; border: 2px solid #475569; border-radius: 16px; padding: 30px; width: 95%; max-width: 700px; text-align: center; box-shadow: 0 15px 40px rgba(0,0,0,0.9); max-height: 90vh; overflow-y: auto;}
+  .modal-title { font-size: 1.8rem; font-weight: bold; color: #fff; margin-bottom: 20px; border-bottom: 2px solid #334155; padding-bottom: 15px; } .modal-text { color: #cbd5e1; margin-bottom: 30px; font-size: 1.3rem; line-height: 1.6; word-wrap: break-word; overflow-wrap: break-word;} .modal-highlight { color: #60a5fa; font-weight: bold; font-size: 1.6rem; display: block; margin: 15px 0; }
+  .modal-actions { display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; }
+  .btn-modal { padding: 20px 30px; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 1.2rem; flex: 1; min-width: 160px; transition: transform 0.1s, box-shadow 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.2); white-space: normal; height: auto;} .btn-modal:active { transform: scale(0.97); }
+  .btn-primary { background: #3b82f6; color: white; border: 1px solid #2563eb; } .btn-warning { background: #f59e0b; color: #000; border: 1px solid #d97706; } .btn-secondary { background: #334155; color: #cbd5e1; border: 1px solid #475569; } .btn-danger { background: #ef4444; color: white; border: 1px solid #dc2626; }
+  .suggestion-box { background: #0f172a; border: 2px dashed #64748b; padding: 20px; border-radius: 12px; margin-bottom: 25px; } .suggestion-label { font-size: 1rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; } .suggestion-value { font-size: 1.5rem; font-weight: bold; color: #fff; margin: 10px 0; line-height: 1.3; }
+  .nav-controls { display: flex; gap: 10px; justify-content: space-between; margin-top: 15px; } #btnNavPrev, #btnNavNext { font-size: 1rem !important; padding: 15px 20px !important; }
+  @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } } @keyframes pulse-grey { 0% { box-shadow: 0 0 0 0 rgba(148, 163, 184, 0.7); } 70% { box-shadow: 0 0 0 15px rgba(148, 163, 184, 0); } 100% { box-shadow: 0 0 0 0 rgba(148, 163, 184, 0); } }
+</style>
+</head>
+<body>
+
+<div id="customModal" class="modal-overlay">
+    <div class="modal-box">
+        <div id="modalTitle" class="modal-title"></div>
+        <div id="modalContent" class="modal-text"></div>
+        <div id="modalSuggestion" class="suggestion-box" style="display:none;">
+            <div class="suggestion-label">Sugestão de Troca (<span id="suggIndex">1/1</span>):</div>
+            <div id="suggProd" class="suggestion-value">---</div>
+            <div id="suggQtd" style="color:#60a5fa; font-weight:bold; font-size:1.8rem;">---</div>
+            <div id="suggReal" style="font-size:1rem; color:#94a3b8; margin-top:8px; border-top:1px solid #334155; padding-top:8px;">---</div>
+            <div id="navButtons" class="nav-controls">
+                <button id="btnNavPrev" class="btn-modal btn-secondary">⏮️ ANTERIOR</button>
+                <button id="btnNavNext" class="btn-modal btn-secondary">PRÓXIMO ⏭️</button>
+            </div>
+        </div>
+        <div id="modalActions" class="modal-actions"></div>
+    </div>
+</div>
+
+<div id="loginModal" class="modal-overlay" style="display: flex; z-index: 9999; background: #0f172a;">
+    <div class="modal-box" style="max-width: 500px;">
+        <h2 style="color: #fff; margin-bottom: 5px; font-size: 1.8rem;">📦 Identificação</h2>
+        <p style="color: #94a3b8; margin-bottom: 20px; font-size: 1.1rem;">Identifique-se para acessar a Separação.</p>
+        <input type="text" id="inputNomeSeparador" list="listaNomesSeparador" placeholder="Digite seu nome..." style="box-sizing: border-box; width: 100%; padding: 15px; font-size: 1.2rem; border-radius: 6px; border: 2px solid #3b82f6; background: #1e293b; color: white; margin-bottom: 20px; text-transform: uppercase;">
+        <datalist id="listaNomesSeparador"></datalist>
+        <button class="btn-modal btn-primary" style="box-sizing: border-box; width: 100%;" onclick="validarLoginSeparacao()">Entrar no Sistema</button>
+    </div>
+</div>
+
+<div class="header">
+    <div style="display:flex; align-items:center; gap:15px;">
+        <h2 style="font-size:1.5rem; margin:0;">Separação <span style="color:#60a5fa">NSA</span></h2>
+        <span id="conn-status" style="font-size:1rem; color:#ef4444;">●</span>
+        <span id="user-display" style="display:none; font-size:0.9rem; background:#334155; padding:4px 8px; border-radius:4px; color:#cbd5e1; border:1px solid #475569; margin-left:10px;"></span>
+    </div>
+    <div style="display:flex; gap:10px;">
+        <button class="btn-modal btn-primary" style="padding: 10px 20px; font-size: 1rem; flex: none; min-width: auto;" onclick="window.location.reload()">Atualizar Dashboard</button>
+    </div>
+</div>
+
+<div id="main-container" class="container"><p style="text-align:center; color:#94a3b8; margin-top:50px; font-size:1.2rem;">Carregando...</p></div>
+
+<script>
+const firebaseConfig = { apiKey: "AIzaSyBqfZfTo8Va-s-8ozWQz6FqqlzNnFFppHc", authDomain: "analise-nsa.firebaseapp.com", projectId: "analise-nsa", databaseURL: "https://analise-nsa-default-rtdb.firebaseio.com" };
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+let GLOBAL_DADOS = [], GLOBAL_DADOS_ORIGINAIS = [], GLOBAL_SEQ = [], GLOBAL_SEQ_DIARIA = [], GLOBAL_PALLETS = {}, MAP_EMB = {}, GLOBAL_CONSUMO = {};
+let POSICOES_FIXAS = false, OCULTAR_TABELA = false, ARREDONDAR_ABAIXO = false, ARREDONDAR_ACIMA = false;  
+let FOCAR_MICRO = false; 
+let EXTRAIR_MICRO_MACRO = false;
+let OCULTAR_TULHAS = false;
+let ATIVAR_RESERVAS = true;
+let OCULTAR_ETIQUETAS_NIVEL = false;
+
+// Set global para capturar os locais ocultos pela Configuração da Separação Fechado
+let LOCAIS_VISIVEIS = new Set(['IHM24', 'IHM25', 'IHM26', 'IHM27', 'IHM28', 'IHM29', 'QL', 'SALA']);
+
+let listaUsuariosPermitidos = [], exigeLoginSeparador = false;
+window.currentUser = sessionStorage.getItem('nsa_separadorUser') || null;
+const PESO_PADRAO = 25; 
+
+function parseQtd(val) {
+    if (val === undefined || val === null || val === '') return 0;
+    if (typeof val === 'number') return val;
+    let str = String(val).trim();
+    if (str.includes(',')) { str = str.replace(/\./g, '').replace(',', '.'); }
+    let num = parseFloat(str);
+    return isNaN(num) ? 0 : num;
+}
+
+db.ref('analise_nsa/config/extrair_micro_macro').on('value', snap => {
+    EXTRAIR_MICRO_MACRO = (snap.val() === true || snap.val() === "true");
+    if (GLOBAL_DADOS_ORIGINAIS.length > 0) {
+        processarMacrosFracionados();
+        render();
+    }
+});
+
+function processarMacrosFracionados() {
+    if (!GLOBAL_DADOS_ORIGINAIS) return;
+    if (!EXTRAIR_MICRO_MACRO) { GLOBAL_DADOS = [...GLOBAL_DADOS_ORIGINAIS]; return; }
+    const novosDados = [];
+    GLOBAL_DADOS_ORIGINAIS.forEach(row => {
+        const woStatus = String(row.WoStatus || '').trim(), type = String(row.Type || '').trim().toUpperCase();
+        const emb = parseQtd(row.ProductPackageQty || row.Emb || 0), qtdNec = parseQtd(row.QtyNecessidade || row.Qtde || 0);
+        if (type === 'MACRO' && woStatus.startsWith('0') && emb > 0 && qtdNec > 0) {
+            const restoRaw = qtdNec % emb; const resto = parseFloat(restoRaw.toFixed(4));
+            if (resto > 0) {
+                const inteiros = parseFloat((qtdNec - resto).toFixed(4));
+                if (inteiros > 0) { novosDados.push({ ...row, QtyNecessidade: inteiros, Qtde: inteiros }); }
+                novosDados.push({ ...row, Type: 'MICRO', QtyNecessidade: resto, Qtde: resto, _virtualMicro: true });
+            } else { novosDados.push(row); }
+        } else { novosDados.push(row); }
+    });
+    GLOBAL_DADOS = novosDados;
+}
+
+db.ref(".info/connected").on("value", s => document.getElementById('conn-status').style.color = s.val() ? "#10b981" : "#ef4444");
+
+// Modificado o Array de Refs para puxar EXCLUSIVAMENTE o "locais_separacao" do Painel Análise de Local
+const refs = [ 
+    db.ref('analise_nsa/dados'), db.ref('analise_nsa/sequencia'), db.ref('analise_nsa/sequencia_diaria'), db.ref('analise_nsa/pallets_ativos'), 
+    db.ref('analise_nsa/historico_consumo'), db.ref('analise_nsa/config/posicoes_fixas'), db.ref('analise_nsa/config/ocultar_tabela_separacao'), 
+    db.ref('analise_nsa/config/arredondar_abaixo'), db.ref('analise_nsa/config/arredondar_acima'), db.ref('analise_nsa/usuarios_cadastrados'), 
+    db.ref('analise_nsa/config/login_required/separador'), db.ref('analise_nsa/config/focar_micro'), db.ref('analise_nsa/config/ocultar_tulhas'),
+    db.ref('analise_nsa/config/extrair_micro_macro'), db.ref('analise_nsa/config/ativar_reservas'), db.ref('analise_nsa/config/ocultar_etiquetas_nivel'),
+    db.ref('analise_nsa/config/locais_separacao') // <-- AGORA LÊ A VARIÁVEL CORRETA DA SEPARAÇÃO FECHADO
+];
+
+refs.forEach((ref, i) => ref.on('value', s => {
+    const val = s.val();
+    if(i===0) { 
+        GLOBAL_DADOS_ORIGINAIS = val||[]; processarMacrosFracionados();
+        const pesosPossiveis = {}; 
+        GLOBAL_DADOS.forEach(r => { let raw = r.ProductPackageQty || r.Emb || 0; let w = parseQtd(raw); const p = String(r.ProductCode).trim(); const desc = String(r.ProductName || '').toUpperCase(); if (desc.includes('(5KG)') || desc.includes(' 5KG') || desc.includes(' 5 KG')) { w = 5; } if(w > 0) { if(!pesosPossiveis[p]) pesosPossiveis[p] = new Set(); pesosPossiveis[p].add(w); } }); 
+        MAP_EMB = {}; Object.keys(pesosPossiveis).forEach(p => { const pesos = Array.from(pesosPossiveis[p]), especificos = pesos.filter(x => x !== 25); if (especificos.length > 0) { MAP_EMB[p] = especificos[0]; } else { MAP_EMB[p] = pesos[0]; } }); 
+    }
+    if(i===1) GLOBAL_SEQ = val||[]; if(i===2) GLOBAL_SEQ_DIARIA = val||[]; if(i===3) GLOBAL_PALLETS = val||{}; if(i===4) GLOBAL_CONSUMO = val||{};
+    if(i===5) POSICOES_FIXAS = (val === true || val === "true");
+    if(i===6) { OCULTAR_TABELA = (val === true || val === "true"); const container = document.getElementById('main-container'); if (OCULTAR_TABELA) { container.classList.add('hide-tables'); } else { container.classList.remove('hide-tables'); } }
+    if(i===7) ARREDONDAR_ABAIXO = (val === true || val === "true"); if(i===8) ARREDONDAR_ACIMA = (val === true || val === "true");
+    if(i===9) { let rawList = []; if (val) { rawList = Array.isArray(val) ? val : Object.values(val); } listaUsuariosPermitidos = rawList.map(u => typeof u === 'string' ? {nome: String(u).toUpperCase(), ihm: ''} : u); const datalist = document.getElementById('listaNomesSeparador'); if(datalist) { datalist.innerHTML = ''; listaUsuariosPermitidos.forEach(u => { if (u && u.nome) datalist.innerHTML += `<option value="${u.nome}">`; }); } }
+    if(i===10) { exigeLoginSeparador = (val === true); verificarLogin(); }
+    if(i===11) { FOCAR_MICRO = (val === true || val === "true"); }
+    if(i===12) { OCULTAR_TULHAS = (val === true || val === "true"); }
+    if(i===13) { EXTRAIR_MICRO_MACRO = (val === true || val === "true"); if (GLOBAL_DADOS_ORIGINAIS.length > 0) { processarMacrosFracionados(); } }
+    if(i===14) { ATIVAR_RESERVAS = val === null ? true : (val === true || val === "true"); }
+    if(i===15) { OCULTAR_ETIQUETAS_NIVEL = (val === true || val === "true"); }
+    if(i===16) { 
+        let arr = ['IHM24', 'IHM25', 'IHM26', 'IHM27', 'IHM28', 'IHM29', 'QL', 'SALA'];
+        if(val) {
+            // Inteligência para corrigir o erro que o Firebase causa ao apagar itens do array no meio
+            if (Array.isArray(val)) { arr = val; }
+            else if (typeof val === 'object') { arr = Object.values(val); }
+            else { arr = [val]; }
+        }
+        LOCAIS_VISIVEIS = new Set(arr); 
+    }
+    render();
+}));
+
+function verificarLogin() {
+    const modal = document.getElementById('loginModal'); const userDisplay = document.getElementById('user-display');
+    if (exigeLoginSeparador) { 
+        if (!window.currentUser) { 
+            modal.style.display = 'flex'; userDisplay.innerHTML = ''; userDisplay.style.display = 'none'; 
+        } else { 
+            modal.style.display = 'none'; userDisplay.innerHTML = `👤 ${window.currentUser} | <a href="#" onclick="logoutSeparador()" style="color:#ef4444; margin-left:5px; text-decoration:none; font-weight:bold;">Sair</a>`; userDisplay.style.display = 'inline-block'; 
+        } 
+    } else { 
+        modal.style.display = 'none'; window.currentUser = "Separador Padrão"; userDisplay.innerHTML = ''; userDisplay.style.display = 'none'; 
+    }
+}
+
+function validarLoginSeparacao() {
+    const nomeDigitado = document.getElementById('inputNomeSeparador').value.trim().toUpperCase(); const userObj = listaUsuariosPermitidos.find(u => u && u.nome && u.nome.toUpperCase() === nomeDigitado);
+    if (exigeLoginSeparador) { if (!userObj) { alert("❌ Acesso Negado!\\nNome não encontrado."); return; } } else { if (!nomeDigitado) { alert("Informe seu nome!"); return; } }
+    window.currentUser = userObj ? userObj.nome : nomeDigitado; sessionStorage.setItem('nsa_separadorUser', window.currentUser); verificarLogin(); db.ref('analise_nsa/historico_logins').push({ usuario: window.currentUser, funcao: 'Separação Fechado', acao: 'Login', dataHora: new Date().toISOString() });
+}
+
+function logoutSeparador() {
+    if(confirm("Deseja sair e trocar de usuário?")) {
+        if (window.currentUser && window.currentUser !== "Separador Padrão") { db.ref('analise_nsa/historico_logins').push({ usuario: window.currentUser, funcao: 'Separação Fechado', acao: 'Logout', dataHora: new Date().toISOString() }); }
+        window.currentUser = null; sessionStorage.removeItem('nsa_separadorUser'); verificarLogin();
+    }
+}
+
+function calcularSacosGlobais(saldo, emb) { if (emb <= 0 || saldo <= 0) return 0; if (saldo < emb) { return ARREDONDAR_ABAIXO ? 1 : 0; } else { return ARREDONDAR_ACIMA ? Math.ceil(saldo / emb) : Math.floor(saldo / emb); } }
+
+function getSaldoProdutoCard(ihm, codigo, listaIHM) { 
+    const prodInfo = listaIHM.find(x => x.c === codigo);
+    let totalNecessario = prodInfo ? prodInfo.req : 0;
+    
+    let totalConsumidoOperador = 0; 
+    Object.values(GLOBAL_CONSUMO).forEach(h => { 
+        if (h.ihm === ihm && String(h.codigo).trim() === String(codigo).trim() && h.status !== 'Devolvido') { 
+            totalConsumidoOperador += parseFloat(h.qtd || 0); 
+        } 
+    }); 
+    
+    let abatidoNaMesa = 0;
+    const pData = GLOBAL_PALLETS[ihm];
+    if (pData && pData.slots) {
+        pData.slots.forEach(sl => {
+            if (!sl.vazio && sl.nivel !== 'CIMA' && String(sl.produto.codigo).trim() === String(codigo).trim()) {
+                if(sl.status === 'SEPARADO' || sl.status === 'USADO' || sl.status === 'PARCIAL' || sl.status === 'ABASTECENDO') { 
+                    let aloc = parseFloat(sl.qtdAlocada || 0);
+                    let ret = parseFloat(sl.qtdRetirada || 0);
+                    if(sl.status === 'USADO' && !sl.devolvido) ret = aloc; 
+                    let restamFisico = aloc - ret;
+                    if(sl.status === 'USADO' && sl.devolvido) restamFisico = 0;
+                    if(restamFisico > 0) abatidoNaMesa += restamFisico;
+                }
+            }
+        });
+    }
+    let saldo = totalNecessario - (totalConsumidoOperador + abatidoNaMesa); 
+    return saldo > 0 ? saldo : 0; 
+}
+
+function render() {
+    const container = document.getElementById('main-container'); if(GLOBAL_DADOS.length === 0) return;
+    const seqFull = Array.from(new Set([...GLOBAL_SEQ.map(i=>String(i.ordem).trim()), ...GLOBAL_SEQ_DIARIA.map(i=>String(i.op).trim())]));
+    
+    const savedIgnore = JSON.parse(localStorage.getItem('nsa_ignore_locais') || '["L2","L3","SILO","VEICULO"]');
+    const locaisIgnorados = new Set(savedIgnore);
+
+    const itens = GLOBAL_DADOS.filter(r => { 
+        const t = String(r.Type).toUpperCase(); const s = String(r.StatusNecessidade); const w = String(r.WoStatus||''); 
+        let l = r.Local ? String(r.Local).trim().toUpperCase() : '';
+        if (!l) {
+            const c = r.Cadastro ? String(r.Cadastro).trim().toUpperCase() : '';
+            if (c.startsWith('IHM')) l = c.split(' ')[0]; else if (c.includes('SALA')) l = 'SALA'; else if (c.includes('QL')) l = 'QL'; else l = 'OUTROS';
+        }
+        
+        // Bloqueia qualquer local que não seja IHM, SALA ou QL, classificando como OUTROS
+        if (!l.includes('SALA') && !l.includes('QL') && !l.startsWith('IHM')) l = 'OUTROS';
+
+        // Lógica Adicionada: Verifica se o local está bloqueado pelo Firebase OU pelo LocalStorage
+        if (locaisIgnorados.has(l) || !LOCAIS_VISIVEIS.has(l)) return false;
+
+        const isWoStatus = FOCAR_MICRO ? w.match(/^(0|1|2)/) : w.match(/^(1|2)/);
+        // Exclui completamente SILO, VEICULO e OUTROS da tela do operador
+        return t==='MICRO' && s==='0 - Necessidade a separar' && !['SILO','VEICULO','OUTROS'].includes(l) && isWoStatus; 
+    });
+    
+    const dadosIHM = {}; 
+    itens.forEach(r => {
+        let l = r.Local ? String(r.Local).trim().toUpperCase() : '';
+        if (!l) {
+            const c = r.Cadastro ? String(r.Cadastro).trim().toUpperCase() : '';
+            if (c.startsWith('IHM')) l = c.split(' ')[0]; else if (c.includes('SALA')) l = 'SALA'; else if (c.includes('QL')) l = 'QL'; else l = 'OUTROS';
+        }
+        if (!l.includes('SALA') && !l.includes('QL') && !l.startsWith('IHM')) l = 'OUTROS';
+
+        const tulha = String(r.Tulha || '').trim().toUpperCase();
+        if (tulha === 'SEM TULHA POUCO UTILIZADO' && l !== 'OUTROS') l += '_POUCO_USO';
+        
+        const p = String(r.ProductCode).trim(), desc = String(r.ProductName || '').toUpperCase();
+        let rawEmb = r.ProductPackageQty || r.Emb || 0; 
+        let embRow = parseQtd(rawEmb); 
+        if (desc.includes('(5KG)') || desc.includes(' 5KG') || desc.includes(' 5 KG')) { embRow = 5; }
+        const embGlobal = MAP_EMB[p] || 0, embFinal = embRow > 0 ? embRow : embGlobal;
+        
+        if(!dadosIHM[l]) dadosIHM[l] = {};
+        if(!dadosIHM[l][p]) { dadosIHM[l][p] = { c: p, n: String(r.ProductName).trim(), req: 0, emb: embFinal, ords: [], tulha: tulha }; } else { if ( (dadosIHM[l][p].emb === 0 || dadosIHM[l][p].emb === 25) && embFinal > 0 && embFinal !== 25) { dadosIHM[l][p].emb = embFinal; } }
+        
+        dadosIHM[l][p].req += parseQtd(r.QtyNecessidade || r.Qtde || 0); 
+        dadosIHM[l][p].ords.push(String(r.WoCode).trim());
+    });
+
+    let novosCardsHtml = '';
+    
+    Object.keys(dadosIHM).sort().forEach(ihm => {
+        const isPoucoUso = ihm.includes('_POUCO_USO'); const titleDisplay = isPoucoUso ? ihm.replace('_POUCO_USO', ' (SEM TULHA POUCO USO)') : ihm;
+        const bgHeader = isPoucoUso ? '#4c1d95' : '#020617'; const borderHeader = isPoucoUso ? '#7c3aed' : '#334155'; const colorTitle = isPoucoUso ? '#d8b4fe' : '#fff';
+
+        const lista = Object.values(dadosIHM[ihm]).sort((a,b) => { const minIdx = (prod) => { let m = 999999; prod.ords.forEach(o => { let x = seqFull.indexOf(o); if(x>-1 && x<m) m=x; }); return m; }; return minIdx(a) - minIdx(b); });
+        const pData = GLOBAL_PALLETS[ihm]; 
+        
+        let slotsCimaHtml = ''; let slotsBaixoHtml = '';
+        
+        if(pData && pData.slots) {
+            pData.slots.forEach((s, idx) => {
+                let slotHtml = '';
+                if(!s.vazio) {
+                    const st = s.status || 'PENDENTE'; const sData = encodeURIComponent(JSON.stringify(s)); const lData = encodeURIComponent(JSON.stringify(lista));
+                    const prodInfo = lista.find(p => p.c === s.produto.codigo); const desc = prodInfo ? prodInfo.n : '';
+                    
+                    let retirado = parseFloat(s.qtdRetirada || 0); 
+                    if (st === 'USADO' && !s.devolvido) { retirado = parseFloat(s.qtdAlocada); }
+                    
+                    let restam = Math.round((parseFloat(s.qtdAlocada) - retirado) * 1000) / 1000;
+                    
+                    let displayQty = s.qtdAlocada; let displaySacos = s.sacos; let parcialHtml = '';
+                    
+                    if(st === 'PARCIAL') { 
+                        displayQty = restam; 
+                        if(prodInfo && prodInfo.emb > 0) { displaySacos = Math.floor(displayQty / prodInfo.emb); } 
+                        parcialHtml = `<div class="parcial-badge">Restam: ${restam}kg | Repor: ${retirado}kg</div>`; 
+                    } else if (st === 'ABASTECENDO') { 
+                        displayQty = 0; displaySacos = 0; 
+                    } else if (st === 'USADO' && s.devolvido) {
+                        displayQty = restam; 
+                        if(prodInfo && prodInfo.emb > 0) { displaySacos = Math.floor(displayQty / prodInfo.emb); } 
+                        parcialHtml = `<div class="parcial-badge" style="background:#b91c1c; border-color:#fca5a5;">Devolvido: ${restam}kg | Repor: ${retirado}kg</div>`;
+                    } else if (st === 'USADO') {
+                        displayQty = restam; 
+                    }
+                    
+                    let saldoTexto = ''; let classSaldo = 'slot-balance'; let customSaldoStyle = '';
+                    
+                    if (s.nivel === 'CIMA') {
+                        saldoTexto = `📦 Nível Reserva`; 
+                        classSaldo = 'slot-balance';
+                        customSaldoStyle = 'background: rgba(71, 85, 105, 0.5); color: #cbd5e1; border-color: #475569;';
+                    } else {
+                        const saldoRestanteOP = getSaldoProdutoCard(ihm, s.produto.codigo, lista);
+                        if (saldoRestanteOP > 0.1) { 
+                            saldoTexto = `OP Resta: ${saldoRestanteOP.toFixed(1)} kg`; 
+                        } else { 
+                            if (st === 'PARCIAL' || st === 'USADO') {
+                                if (restam > 0) { saldoTexto = `Sobra na Caixa: ${restam} kg`; classSaldo += ' sobra'; } else { saldoTexto = `⚠️ Esgotado!`; classSaldo += ' sobra'; }
+                            } else {
+                                saldoTexto = `OP Resta: 0 kg (OK)`; classSaldo += ' ok';
+                            }
+                        }
+                    }
+                    
+                    const tulhaTxt = (!OCULTAR_TULHAS && s.produto.tulha && s.produto.tulha.trim() !== '') ? `<div style="font-size:0.75rem; color:#facc15; background:#422006; border-radius:4px; padding:2px 4px; display:inline-block; margin-top:4px; border: 1px solid #facc15;">${s.produto.tulha}</div>` : '';
+                    let extraStyles = (st === 'USADO' && s.devolvido) ? "text-decoration: none; opacity: 1;" : "";
+                    
+                    const nivelBadge = OCULTAR_ETIQUETAS_NIVEL ? '' : (s.nivel === 'CIMA' ? `<div style="font-size:1.1rem; font-weight:bold; background:#475569; color:#fff; border-radius:4px; padding:4px; margin-top:4px;">⬆️ RESERVA</div>` : `<div style="font-size:1.1rem; font-weight:bold; background:#0284c7; color:#fff; border-radius:4px; padding:4px; margin-top:4px;">⬇️ CHÃO</div>`);
+
+                    slotHtml = `<div class="slot ${st}" onclick="checkSlot('${ihm}', ${idx}, '${sData}', '${lData}')">
+                                    <div class="slot-letter">${s.letra}</div><div class="slot-code">${s.produto.codigo}</div><div class="slot-desc">${desc}</div>${nivelBadge}${tulhaTxt}
+                                    <div style="margin-top:auto;">${parcialHtml}<div class="slot-qty" style="${extraStyles}">${displayQty}kg</div><div class="slot-emb">${displaySacos} scs</div><div class="${classSaldo}" style="${customSaldoStyle}">${saldoTexto}</div></div>
+                                  </div>`;
+                }
+
+                if (s.nivel === 'CIMA') { slotsCimaHtml += slotHtml; } else { slotsBaixoHtml += slotHtml; }
+            });
+        }
+
+        let rowsHtml = '';
+        lista.forEach((p, idx) => {
+            let consumidoHistoricoOperador = 0;
+            Object.values(GLOBAL_CONSUMO).forEach(h => { if (h.ihm === ihm && String(h.codigo).trim() === String(p.c).trim() && h.status !== 'Devolvido') { consumidoHistoricoOperador += parseFloat(h.qtd || 0); } }); 
+            let abatidoNaMesaTabela = 0;
+            if(pData && pData.slots) pData.slots.forEach(s => { 
+                if(!s.vazio && s.nivel !== 'CIMA' && s.produto.codigo === p.c) { 
+                    if(s.status === 'PENDENTE' || s.status === 'SEPARADO' || s.status === 'USADO' || s.status === 'PARCIAL' || s.status === 'ABASTECENDO') { 
+                        let aloc = parseFloat(s.qtdAlocada || 0); let ret = parseFloat(s.qtdRetirada || 0);
+                        if(s.status === 'USADO' && !s.devolvido) ret = aloc;
+                        let restamFisico = aloc - ret; if(s.status === 'USADO' && s.devolvido) restamFisico = 0; 
+                        if(restamFisico > 0) abatidoNaMesaTabela += restamFisico;
+                    } 
+                } 
+            });
+            
+            const needReal = p.req; const saldoReal = needReal - (consumidoHistoricoOperador + abatidoNaMesaTabela); let saldoFechado = saldoReal;
+            if(p.emb > 0) { const nSacos = calcularSacosGlobais(saldoReal, p.emb); saldoFechado = nSacos * p.emb; } if(saldoFechado < 0) saldoFechado = 0;
+            let stTxt='A SEPARAR', stCls='st-separar', rowOp='1', displaySaldo = saldoFechado;
+            if(saldoReal <= 0.1) { stTxt='FINALIZADO'; stCls='st-finalizado'; rowOp='0.4'; displaySaldo = 'OK'; } else if (saldoFechado === 0 && saldoReal > 0.1) { stTxt='ABERTO'; stCls='st-aberto'; displaySaldo = '0 (Aberto)'; } else if(abatidoNaMesaTabela > 0 || consumidoHistoricoOperador > 0) { stTxt='PARCIAL'; stCls='st-parcial'; }
+            
+            if(needReal > 0.1 || abatidoNaMesaTabela > 0 || consumidoHistoricoOperador > 0) { 
+                const star = Array.from(p.ords).some(o=>seqFull.includes(o)) ? '★' : ''; 
+                rowsHtml += `<tr style="opacity:${rowOp}"><td style="text-align:center; color:gold;">${star} <span style="color:#94a3b8">${idx+1}</span></td><td style="color:#fff;">${p.c}</td><td class="td-desc">${p.n}</td> <td style="text-align:center;">${p.emb||'-'}</td><td style="color:#94a3b8">${needReal.toFixed(1)}</td><td class="cell-saldo" style="color:${displaySaldo==='OK'?'#94a3b8':(saldoFechado>0?'#e0e7ff':'#60a5fa')}">${displaySaldo}</td><td style="text-align:center;"><span class="status-badge ${stCls}">${stTxt}</span></td></tr>`; 
+            }
+        });
+        
+        let palletAreaHtml = '';
+        if (ATIVAR_RESERVAS) {
+            palletAreaHtml = `
+                ${OCULTAR_ETIQUETAS_NIVEL ? '' : '<div style="font-size: 0.9rem; color: #94a3b8; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; border-bottom: 1px dashed #475569; padding-bottom: 4px;">⬆️ Nível Superior (Reservas)</div>'}
+                <div class="slots-row">${slotsCimaHtml !== '' ? slotsCimaHtml : '<div style="color:#475569; font-style:italic; padding:10px;">Nenhuma reserva alocada.</div>'}</div>
+                <div style="height: 6px; background: #475569; margin: 10px -10px 20px -10px; box-shadow: 0 4px 6px rgba(0,0,0,0.4);"></div>
+                ${OCULTAR_ETIQUETAS_NIVEL ? '' : '<div style="font-size: 0.9rem; color: #94a3b8; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; border-bottom: 1px dashed #475569; padding-bottom: 4px;">⬇️ Nível Inferior (Chão / Separação)</div>'}
+                <div class="slots-row">${slotsBaixoHtml !== '' ? slotsBaixoHtml : '<div style="color:#475569; font-style:italic; padding:10px;">Nenhum produto no chão.</div>'}</div>
+            `;
+        } else {
+            palletAreaHtml = `
+                <div class="slots-row">${slotsBaixoHtml !== '' ? slotsBaixoHtml : '<div style="color:#475569; font-style:italic; padding:10px;">Nenhum produto no chão.</div>'}</div>
+            `;
+        }
+
+        novosCardsHtml += `
+        <div class="ihm-card">
+            <div class="ihm-header" style="background:${bgHeader}; border-bottom: 1px solid ${borderHeader};"><span style="font-weight:bold; font-size:1.2rem; color:${colorTitle};">📍 ${titleDisplay}</span></div>
+            <div class="pallet-area">
+                ${palletAreaHtml}
+            </div>
+            <div class="table-responsive"><table><thead><tr><th>#</th><th>Produto</th><th>Descrição</th><th>Emb</th><th>Total</th><th>Saldo (Sacos)</th><th>Status</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
+        </div>`;
+    });
+    
+    if (novosCardsHtml === '') {
+        container.innerHTML = '<p style="text-align:center; color:#94a3b8; margin-top:50px; font-size:1.2rem;">Nenhuma necessidade pendente nas visualizações liberadas.</p>';
+    } else {
+        container.innerHTML = novosCardsHtml;
+    }
+}
+
+function checkSlot(ihm, idx, sEncoded, lEncoded) {
+    const s = JSON.parse(decodeURIComponent(sEncoded)); 
+    const lista = JSON.parse(decodeURIComponent(lEncoded)); 
+    const st = s.status || 'PENDENTE';
+    
+    // --- LÓGICA DO NÍVEL SUPERIOR (RESERVA) ---
+    if (s.nivel === 'CIMA') {
+        if (st === 'PENDENTE') {
+            const prodInfo = lista.find(x => x.c === s.produto.codigo); 
+            const descFina = prodInfo ? prodInfo.n : (s.produto.descricao || ''); 
+            db.ref('analise_nsa/historico_auditoria').push({ usuario: window.currentUser, ihm: ihm, codigo: s.produto.codigo, descricao: descFina, qtd: s.qtdAlocada, tipo: 'Separou Reserva', origem: 'Separação Fechado', dataHora: new Date().toISOString() }); 
+            return db.ref(`analise_nsa/pallets_ativos/${ihm}/slots/${idx}/status`).set('SEPARADO');
+        }
+        
+        const pData = GLOBAL_PALLETS[ihm] || {};
+        const limiteGlobal = pData.limitKg || 125;
+        const slotBaixoIdx = pData.slots.findIndex(sl => sl.letra === s.letra && sl.nivel === 'BAIXO');
+        
+        if (slotBaixoIdx === -1) {
+            alert("A posição física no chão não foi encontrada!");
+            return;
+        }
+        
+        const slotBaixo = pData.slots[slotBaixoIdx];
+        
+        let restamChao = 0;
+        if (slotBaixo && !slotBaixo.vazio) {
+            let ret = parseFloat(slotBaixo.qtdRetirada || 0);
+            let aloc = parseFloat(slotBaixo.qtdAlocada || 0);
+            if (slotBaixo.status === 'USADO' && !slotBaixo.devolvido) ret = aloc;
+            restamChao = Math.round((aloc - ret) * 1000) / 1000;
+        }
+        
+        let espacoLivre = limiteGlobal - restamChao;
+        if (espacoLivre < 0) espacoLivre = 0;
+        let maxTransfer = Math.min(s.qtdAlocada, espacoLivre);
+        
+        const modal = document.getElementById('customModal'); 
+        const mTitle = document.getElementById('modalTitle'); 
+        const mContent = document.getElementById('modalContent'); 
+        const mActions = document.getElementById('modalActions'); 
+        const mSuggestion = document.getElementById('modalSuggestion');
+        
+        mTitle.innerText = `📦 Transferir Reserva [${s.letra}] - ${s.produto.codigo}`; 
+        mSuggestion.style.display = 'none';
+        
+        let htmlMsg = `<div style="background:#475569; color:#fff; padding:15px; border-radius:8px; margin-bottom:15px; font-size: 1.1rem; text-align:left;">
+            <div style="margin-bottom:8px;"><b>⬆️ RESERVA (Atual):</b> ${s.qtdAlocada}kg</div>
+            <div><b>⬇️ CHÃO (Posição ${s.letra}):</b> Restam ${restamChao}kg <span style="color:#93c5fd;">(Cabe +${espacoLivre}kg)</span></div>
+        </div>`;
+        
+        if (slotBaixo && !slotBaixo.vazio && slotBaixo.produto.codigo !== s.produto.codigo && restamChao > 0) {
+            htmlMsg += `<div style="background:#7f1d1d; color:#fca5a5; padding:10px; border-radius:6px; font-weight:bold;">🚨 O produto no chão (${slotBaixo.produto.codigo}) é diferente e a caixa não está vazia!</div>`;
+            mActions.innerHTML = '';
+        } else if (maxTransfer <= 0) {
+            htmlMsg += `<div style="background:#713f12; color:#fde047; padding:10px; border-radius:6px; font-weight:bold;">⚠️ A posição no chão já está na capacidade máxima!</div>`;
+            mActions.innerHTML = '';
+            const btnDesmarcar = document.createElement('button');
+            btnDesmarcar.className = 'btn-modal btn-danger';
+            btnDesmarcar.innerText = '⏪ DESMARCAR RESERVA (Voltar para Pendente)';
+            btnDesmarcar.onclick = () => {
+                db.ref(`analise_nsa/pallets_ativos/${ihm}/slots/${idx}/status`).set('PENDENTE');
+                closeModal();
+            };
+            mActions.appendChild(btnDesmarcar);
+        } else {
+            let valorInput = Math.floor(maxTransfer);
+            htmlMsg += `<div style="color:#e0e7ff; font-size:1.1rem; margin-bottom:10px;">Quantidade a transferir para o chão:</div>
+            <input type="number" id="inputTransfer" max="${maxTransfer}" value="${maxTransfer}" style="width:100px; padding:10px; font-size:1.2rem; text-align:center; border-radius:6px; background:#0f172a; color:#fff; border:1px solid #60a5fa;">
+            <span style="font-size:1.1rem;"> kg</span>`;
+            
+            mActions.innerHTML = '';
+            const btnTransfer = document.createElement('button');
+            btnTransfer.className = 'btn-modal btn-primary';
+            btnTransfer.innerText = `⬇️ TRANSFERIR PARA O CHÃO`;
+            btnTransfer.onclick = () => {
+                let transferido = parseFloat(document.getElementById('inputTransfer').value);
+                if (isNaN(transferido) || transferido <= 0 || transferido > maxTransfer || transferido > s.qtdAlocada) {
+                    alert("Quantidade inválida!"); return;
+                }
+                const emb = s.produto.emb || 0;
+                
+                let novaQtdCima = Math.round((s.qtdAlocada - transferido)*1000)/1000;
+                let objCima = {};
+                if (novaQtdCima <= 0) {
+                    objCima = { ...s, vazio: true, status: 'PENDENTE', qtdAlocada: 0, sacos: 0, qtdRetirada: null, devolvido: null };
+                } else {
+                    objCima = { ...s, qtdAlocada: novaQtdCima, sacos: emb > 0 ? novaQtdCima/emb : 0 };
+                }
+                
+                let novaQtdBaixo = Math.round((restamChao + transferido)*1000)/1000;
+                let objBaixo = { 
+                    ...slotBaixo, 
+                    vazio: false, 
+                    letra: s.letra,
+                    produto: s.produto, 
+                    qtdAlocada: novaQtdBaixo, 
+                    sacos: emb > 0 ? novaQtdBaixo/emb : 0, 
+                    status: 'SEPARADO', 
+                    qtdRetirada: null, 
+                    devolvido: null,
+                    nivel: 'BAIXO'
+                };
+                
+                let updates = {};
+                updates[`analise_nsa/pallets_ativos/${ihm}/slots/${idx}`] = objCima;
+                updates[`analise_nsa/pallets_ativos/${ihm}/slots/${slotBaixoIdx}`] = objBaixo;
+                db.ref().update(updates);
+                
+                db.ref('analise_nsa/historico_auditoria').push({ usuario: window.currentUser, ihm: ihm, codigo: s.produto.codigo, descricao: s.produto.nome, qtd: transferido, tipo: 'Desceu Reserva pro Chão', origem: 'Separação Fechado', dataHora: new Date().toISOString() });
+                
+                closeModal();
+            };
+            mActions.appendChild(btnTransfer);
+            
+            const btnDesmarcar = document.createElement('button');
+            btnDesmarcar.className = 'btn-modal btn-danger';
+            btnDesmarcar.innerText = '⏪ DESMARCAR';
+            btnDesmarcar.onclick = () => {
+                db.ref(`analise_nsa/pallets_ativos/${ihm}/slots/${idx}/status`).set('PENDENTE');
+                closeModal();
+            };
+            mActions.appendChild(btnDesmarcar);
+        }
+        
+        const btnCancel = document.createElement('button'); 
+        btnCancel.className = 'btn-modal btn-secondary'; 
+        btnCancel.innerText = 'VOLTAR'; 
+        btnCancel.onclick = closeModal; 
+        mActions.appendChild(btnCancel);
+        
+        mContent.innerHTML = htmlMsg;
+        modal.style.display = 'flex';
+        return;
+    }
+
+    // --- LÓGICA ORIGINAL PARA O NÍVEL INFERIOR (CHÃO) ---
+    if(st === 'PENDENTE') { 
+        const prodInfo = lista.find(x => x.c === s.produto.codigo); const descFina = prodInfo ? prodInfo.n : (s.produto.descricao || ''); 
+        db.ref('analise_nsa/historico_auditoria').push({ usuario: window.currentUser, ihm: ihm, codigo: s.produto.codigo, descricao: descFina, qtd: s.qtdAlocada, tipo: 'Separado', origem: 'Separação Fechado', dataHora: new Date().toISOString() }); 
+        return db.ref(`analise_nsa/pallets_ativos/${ihm}/slots/${idx}/status`).set('SEPARADO'); 
+    }
+    if(st === 'SEPARADO') return db.ref(`analise_nsa/pallets_ativos/${ihm}/slots/${idx}/status`).set('PENDENTE');
+    
+    if(st === 'USADO' || st === 'PARCIAL' || st === 'ABASTECENDO') {
+        const prodCode = s.produto.codigo, pData = GLOBAL_PALLETS[ihm] || {}, limiteGlobal = pData.limitKg || 125;
+        const qtdTotalAnterior = parseFloat(s.qtdAlocada) || 0; 
+        
+        let consumidoAgora = qtdTotalAnterior; 
+        if (s.qtdRetirada !== undefined && (st === 'PARCIAL' || s.devolvido)) { consumidoAgora = parseFloat(s.qtdRetirada); }
+        
+        let restamFisico = Math.round((qtdTotalAnterior - consumidoAgora) * 1000) / 1000;
+        if (st === 'USADO' && !s.devolvido) restamFisico = 0;
+        
+        const itemInfo = lista.find(x => x.c === prodCode), emb = (itemInfo && itemInfo.emb > 0) ? itemInfo.emb : (s.produto.emb || 0);
+        
+        let consumidoHistoricoOperador = 0; 
+        Object.values(GLOBAL_CONSUMO).forEach(h => { if (h.ihm === ihm && String(h.codigo).trim() === String(prodCode).trim() && h.status !== 'Devolvido') { consumidoHistoricoOperador += parseFloat(h.qtd || 0); } }); 
+        
+        let abatidoNaMesa = 0; const slotsAtuais = pData.slots || []; 
+        slotsAtuais.forEach((sl) => { 
+            if(!sl.vazio && sl.nivel !== 'CIMA' && sl.produto.codigo === prodCode) { 
+                if(sl.status === 'SEPARADO' || sl.status === 'USADO' || sl.status === 'PARCIAL' || sl.status === 'ABASTECENDO') { 
+                    let aloc = parseFloat(sl.qtdAlocada || 0); let ret = parseFloat(sl.qtdRetirada || 0); 
+                    if(sl.status === 'USADO' && !sl.devolvido) ret = aloc;
+                    let restam = aloc - ret; if (sl.status === 'USADO' && sl.devolvido) restam = 0;
+                    if(restam > 0) abatidoNaMesa += restam;
+                } 
+            } 
+        });
+        
+        const totalNecessario = itemInfo ? itemInfo.req : 0, saldoRestanteReal = totalNecessario - (consumidoHistoricoOperador + abatidoNaMesa);
+        let saldoSacos = 0, saldoFechadoModal = saldoRestanteReal; 
+        if (emb > 0) { saldoSacos = calcularSacosGlobais(saldoRestanteReal, emb); saldoFechadoModal = saldoSacos * emb; } if (saldoFechadoModal < 0) saldoFechadoModal = 0;
+        
+        let espacoLivre = limiteGlobal - restamFisico; if(espacoLivre < 0) espacoLivre = 0;
+        
+        const modal = document.getElementById('customModal'); const mTitle = document.getElementById('modalTitle'); const mContent = document.getElementById('modalContent'); const mActions = document.getElementById('modalActions'); const mSuggestion = document.getElementById('modalSuggestion'); const btnPrev = document.getElementById('btnNavPrev'); const btnNext = document.getElementById('btnNavNext');
+        
+        mTitle.innerText = `Gerenciar ${s.letra} - ${prodCode}`; mSuggestion.style.display = 'none'; 
+        
+        let htmlMsg = '';
+        if (st === 'PARCIAL') { 
+            htmlMsg += `<div style="background:#ea580c; color:#fff; padding:10px; border-radius:8px; margin-bottom:15px; border:1px solid #fdba74;"><span style="font-size:1.1rem; font-weight:bold;">⚠️ USO PARCIAL</span><br>Retirado na IHM: <b>${consumidoAgora}kg</b><br>Restam físicos no Slot: <b>${restamFisico}kg</b></div>`; 
+        } else if (st === 'ABASTECENDO') { 
+            htmlMsg += `<div style="background:#475569; color:#fff; padding:10px; border-radius:8px; margin-bottom:15px; border:1px solid #94a3b8;"><span style="font-size:1.1rem; font-weight:bold;">🔄 EM ABASTECIMENTO PELA EMPILHADEIRA</span><br>Falta repor: <b>${consumidoAgora}kg</b></div>`; 
+        } else if (s.devolvido) {
+            htmlMsg += `<div style="background:#ef4444; color:#fff; padding:10px; border-radius:8px; margin-bottom:15px; border:1px solid #fca5a5;"><span style="font-size:1.1rem; font-weight:bold;">🚨 CAIXA DEVOLVIDA</span><br>Consumo Real: <b>${consumidoAgora}kg</b><br>Sobra Física na sua mesa: <b>${restamFisico}kg</b></div>Falta repor: <b>${consumidoAgora}kg</b> para voltar à caixa total.<br>`;
+        } else { 
+            htmlMsg += `Falta repor: <b>${consumidoAgora}kg</b>.<br>`; 
+        }
+        
+        let avisoCorte = ''; 
+        if (st === 'PARCIAL' && saldoRestanteReal > 0.1 && consumidoAgora > saldoFechadoModal) { avisoCorte += `<div style="color:#facc15; font-size:0.95rem; margin-bottom:15px; background:rgba(250, 204, 21, 0.1); padding:8px; border-radius:6px; border:1px solid #facc15;">⚠️ <b>Aviso Inteligente:</b> A Tabela só precisa de mais <b>${saldoFechadoModal.toFixed(1)}kg</b> para zerar.</div>`; }
+        if(saldoFechadoModal > espacoLivre && espacoLivre > 0) { avisoCorte += `<div style="color:#60a5fa; font-size:0.95rem; margin-bottom:15px; background:rgba(96, 165, 250, 0.1); padding:8px; border-radius:6px; border:1px solid #60a5fa;">ℹ️ <b>Limite do Slot:</b> A OP pede ${saldoFechadoModal}kg, mas a posição só comporta mais <b>${espacoLivre}kg</b> (Máx: ${limiteGlobal}kg).</div>`; }
+        
+        let isCaixaVazia = (st === 'USADO' && !s.devolvido);
+
+        if (isCaixaVazia) {
+            htmlMsg += `<div style="color:#60a5fa; font-size:1.1rem; margin-bottom:15px; background:rgba(96, 165, 250, 0.1); padding:8px; border-radius:6px; border:1px solid #60a5fa;">📦 <b>Solicitação do Operador:</b> Repor <b>${consumidoAgora}kg</b>.</div>`;
+        } else {
+            if(saldoFechadoModal > 0.1) { htmlMsg += `Resto a fazer na OP: <span class="modal-highlight">${saldoFechadoModal.toFixed(1)}kg (${saldoSacos} scs)</span>`; htmlMsg += avisoCorte; } else { htmlMsg += `<span style="color:#10b981; font-size:1.2rem; display:block; margin: 15px 0; font-weight:bold;">✅ Ordem Concluída! (Sem saldo pendente na tabela)</span>`; }
+        }
+        
+        mContent.innerHTML = htmlMsg; mActions.innerHTML = '';
+        let listaCandidatos = [], indiceAtual = 0;
+        
+        const renderizarBotoes = (modoNavegacao) => {
+            mActions.innerHTML = '';
+            if (!modoNavegacao) {
+                if (st === 'USADO') { const btnAbast = document.createElement('button'); btnAbast.className = 'btn-modal btn-secondary'; btnAbast.style.background = '#475569'; btnAbast.innerText = '🔄 EM ABASTECIMENTO'; btnAbast.onclick = () => aplicarMudanca('STATUS_ABASTECENDO'); mActions.appendChild(btnAbast); } else if (st === 'ABASTECENDO') { const btnVoltar = document.createElement('button'); btnVoltar.className = 'btn-modal btn-danger'; btnVoltar.innerText = '❌ CANCELAR ABASTECIMENTO'; btnVoltar.onclick = () => { const statusVoltar = restamFisico > 0 ? 'PARCIAL' : 'USADO'; aplicarMudanca('STATUS_VOLTAR', null, null, statusVoltar); }; mActions.appendChild(btnVoltar); }
+
+                if (isCaixaVazia) {
+                    let qtdBotao = consumidoAgora;
+                    if (qtdBotao > 0) {
+                        const btnRepo = document.createElement('button');
+                        btnRepo.className = 'btn-modal btn-primary';
+                        btnRepo.innerText = `✅ REPOR (${qtdBotao}kg)`;
+                        btnRepo.onclick = () => aplicarMudanca('REPOR', qtdBotao, null, 'SEPARADO', qtdBotao);
+                        mActions.appendChild(btnRepo);
+                    }
+                    let pesoAjuste = emb > 0 ? emb : PESO_PADRAO;
+                    let maxSlot = Math.floor(limiteGlobal / pesoAjuste) * pesoAjuste;
+                    if (maxSlot > qtdBotao && maxSlot <= limiteGlobal) {
+                        const btnMax = document.createElement('button');
+                        btnMax.className = 'btn-modal btn-warning';
+                        btnMax.innerText = `⚠️ REPOR MÁX (${maxSlot}kg)`;
+                        btnMax.onclick = () => {
+                            if(confirm(`Deseja repor a capacidade máxima (${maxSlot}kg)?`)) {
+                                aplicarMudanca('REPOR', maxSlot, null, 'SEPARADO', maxSlot);
+                            }
+                        };
+                        mActions.appendChild(btnMax);
+                    }
+                }
+                else if (saldoFechadoModal > 0.1) {
+                    let maxQuePossoPor = Math.min(saldoFechadoModal, espacoLivre), qtdBotao = 0; 
+                    if (s.devolvido && consumidoAgora > 0) { maxQuePossoPor = Math.min(saldoFechadoModal, consumidoAgora); }
+                    if (emb > 0) { qtdBotao = Math.floor(maxQuePossoPor / emb) * emb; } else { qtdBotao = parseFloat(maxQuePossoPor.toFixed(2)); }
+                    
+                    if (qtdBotao > 0) { 
+                        const btnRepo = document.createElement('button'); btnRepo.className = 'btn-modal btn-primary'; btnRepo.innerText = `✅ REPOR (${qtdBotao}kg)`; 
+                        let novaAlocacao = (st === 'PARCIAL' || s.devolvido) ? (restamFisico + qtdBotao) : qtdBotao; 
+                        btnRepo.onclick = () => aplicarMudanca('REPOR', parseFloat(novaAlocacao.toFixed(2)), null, 'SEPARADO', qtdBotao); 
+                        mActions.appendChild(btnRepo); 
+                    }
+                    
+                    let pesoAjuste = emb > 0 ? emb : PESO_PADRAO; 
+                    if ((restamFisico + pesoAjuste) <= limiteGlobal) { 
+                        const btnExtra = document.createElement('button'); btnExtra.className = 'btn-modal btn-warning'; btnExtra.innerText = `+1 Saco (${pesoAjuste}kg)`; 
+                        btnExtra.onclick = () => { 
+                            if(confirm("Confirmar +1 Saco?")) { 
+                                let alocExtra = (st === 'PARCIAL' || s.devolvido) ? (restamFisico + pesoAjuste) : pesoAjuste; 
+                                aplicarMudanca('REPOR', parseFloat(alocExtra.toFixed(2)), null, 'SEPARADO', pesoAjuste); 
+                            } 
+                        }; 
+                        mActions.appendChild(btnExtra); 
+                    }
+                } else {
+                    let pesoAjuste = emb > 0 ? emb : PESO_PADRAO; 
+                    if ((restamFisico + pesoAjuste) <= limiteGlobal) { 
+                        const btnAjuste = document.createElement('button'); btnAjuste.className = 'btn-modal btn-warning'; btnAjuste.innerText = `⚠️ AJUSTE EXTRA (${pesoAjuste}kg)`; 
+                        btnAjuste.onclick = () => { 
+                            if(confirm("Deseja adicionar carga extra mesmo sem saldo pendente na tabela?")) { 
+                                let alocExtra = (st === 'PARCIAL' || s.devolvido) ? (restamFisico + pesoAjuste) : pesoAjuste; 
+                                aplicarMudanca('REPOR', parseFloat(alocExtra.toFixed(2)), null, 'SEPARADO', pesoAjuste); 
+                            } 
+                        }; 
+                        mActions.appendChild(btnAjuste); 
+                    }
+                }
+                if (!POSICOES_FIXAS) { const btnTrocar = document.createElement('button'); btnTrocar.className = 'btn-modal btn-secondary'; btnTrocar.innerText = 'TROCAR / BUSCAR OUTRO'; btnTrocar.onclick = () => iniciarNavegacao(); mActions.appendChild(btnTrocar); } else { const avisoFixo = document.createElement('div'); avisoFixo.style.cssText = "width:100%; color:#94a3b8; font-size:0.9rem; margin-top:10px;"; avisoFixo.innerHTML = "🔒 <i>A troca de produto está desativada (Posições Fixas).</i>"; mActions.appendChild(avisoFixo); }
+            }
+            else if (modoNavegacao) {
+                mSuggestion.style.display = 'block';
+                if (listaCandidatos.length > 0) {
+                    const cand = listaCandidatos[indiceAtual], isMesmoItem = (cand.produto.codigo === prodCode); 
+                    document.getElementById('suggProd').innerText = `${cand.produto.codigo} - ${cand.produto.nome}`; document.getElementById('suggQtd').innerText = `${cand.qtdAlocada}kg (${cand.sacos} scs)`; document.getElementById('suggReal').innerHTML = `Necessidade Real: <b>${cand.saldoReal.toFixed(1)}kg</b>`; document.getElementById('suggIndex').innerText = `${indiceAtual + 1}/${listaCandidatos.length}`;
+                    btnPrev.disabled = (indiceAtual === 0); btnPrev.style.opacity = (indiceAtual === 0) ? 0.5 : 1; btnNext.disabled = (indiceAtual === listaCandidatos.length - 1); btnNext.style.opacity = (indiceAtual === listaCandidatos.length - 1) ? 0.5 : 1;
+                    btnPrev.onclick = () => { indiceAtual--; renderizarBotoes(true); }; btnNext.onclick = () => { indiceAtual++; renderizarBotoes(true); };
+                    const btnConf = document.createElement('button'); btnConf.className = 'btn-modal btn-primary';
+                    if (isMesmoItem && (st === 'PARCIAL' || st === 'ABASTECENDO' || s.devolvido)) { btnConf.innerText = `✅ COMPLETAR COM (${cand.qtdAlocada}kg)`; } else if (isMesmoItem) { btnConf.innerText = `✅ REPOR CHEIO (${cand.qtdAlocada}kg)`; } else { btnConf.innerText = '✅ CONFIRMAR ESTE'; }
+                    btnConf.onclick = () => { 
+                        if (isMesmoItem && (st === 'PARCIAL' || st === 'ABASTECENDO' || s.devolvido)) { 
+                            let novaQtd = restamFisico + cand.qtdAlocada; if (novaQtd > limiteGlobal) novaQtd = limiteGlobal; let movimentado = novaQtd - restamFisico; const candCorrigido = { ...cand, qtdAlocada: novaQtd }; aplicarMudanca('TROCAR', null, candCorrigido, 'SEPARADO', movimentado); 
+                        } else { aplicarMudanca('TROCAR', null, cand, 'SEPARADO', cand.qtdAlocada); } 
+                    }; mActions.appendChild(btnConf);
+                    const pesoExtra = cand.produto.emb > 0 ? cand.produto.emb : PESO_PADRAO; let limiteParaSacoExtra = limiteGlobal; if (isMesmoItem) limiteParaSacoExtra = limiteGlobal - restamFisico;
+                    if (pesoExtra <= limiteParaSacoExtra && (isMesmoItem || cand.isZerado)) { const btnUmSaco = document.createElement('button'); btnUmSaco.className = 'btn-modal btn-warning'; btnUmSaco.innerText = `⚠️ APENAS +1 SACO (${pesoExtra}kg)`; btnUmSaco.onclick = () => { let finalQtdExtra = (isMesmoItem && (st === 'PARCIAL' || st === 'ABASTECENDO' || s.devolvido)) ? (restamFisico + pesoExtra) : pesoExtra; let finalSacos = cand.produto.emb > 0 ? (finalQtdExtra / cand.produto.emb) : 0; const candUmSaco = { ...cand, qtdAlocada: parseFloat(finalQtdExtra.toFixed(2)), sacos: finalSacos }; aplicarMudanca('TROCAR', null, candUmSaco, 'SEPARADO', pesoExtra); }; mActions.appendChild(btnUmSaco); }
+                } else { document.getElementById('suggProd').innerText = "Nenhum item disponível"; document.getElementById('suggQtd').innerText = ""; document.getElementById('suggIndex').innerText = "0/0"; btnPrev.style.display = 'none'; btnNext.style.display = 'none'; const btnLiberar = document.createElement('button'); btnLiberar.className = 'btn-modal btn-danger'; btnLiberar.innerText = 'LIBERAR SLOT (VAZIO)'; btnLiberar.onclick = () => aplicarMudanca('LIBERAR'); mActions.appendChild(btnLiberar); }
+                const btnCancel = document.createElement('button'); btnCancel.className = 'btn-modal btn-warning'; btnCancel.innerText = 'CANCELAR'; btnCancel.style.flex = '0'; btnCancel.onclick = () => { mSuggestion.style.display = 'none'; renderizarBotoes(false); }; mActions.appendChild(btnCancel);
+            }
+        };
+        const iniciarNavegacao = () => { listaCandidatos = gerarListaCandidatos(lista, slotsAtuais, prodCode, limiteGlobal, qtdTotalAnterior, (st === 'PARCIAL' || st === 'ABASTECENDO' || s.devolvido) ? restamFisico : 0); indiceAtual = 0; renderizarBotoes(true); };
+        
+        const aplicarMudanca = (modo, qtdForcada, dadosItemNovo, targetStatus = 'PENDENTE', qtdMovimentadaReal = 0) => {
+            if (modo === 'STATUS_ABASTECENDO') { db.ref(`analise_nsa/pallets_ativos/${ihm}/slots/${idx}`).update({ status: 'ABASTECENDO' }); closeModal(); return; }
+            if (modo === 'STATUS_VOLTAR') { db.ref(`analise_nsa/pallets_ativos/${ihm}/slots/${idx}`).update({ status: targetStatus }); closeModal(); return; }
+            
+            let auditQtd = 0, auditProd = prodCode, auditDesc = itemInfo ? itemInfo.n : "";
+            if (modo === 'REPOR') { auditQtd = qtdMovimentadaReal > 0 ? qtdMovimentadaReal : (qtdForcada || saldoRestanteReal); } else if (modo === 'TROCAR' && dadosItemNovo) { auditQtd = qtdMovimentadaReal > 0 ? qtdMovimentadaReal : dadosItemNovo.qtdAlocada; auditProd = dadosItemNovo.produto.codigo; auditDesc = dadosItemNovo.produto.nome; }
+            if (auditQtd > 0 && (modo === 'REPOR' || modo === 'TROCAR')) { db.ref('analise_nsa/historico_auditoria').push({ usuario: window.currentUser, ihm: ihm, codigo: auditProd, descricao: auditDesc, qtd: auditQtd, tipo: 'Separado', origem: 'Separação Fechado', dataHora: new Date().toISOString() }); }
+            
+            if (modo === 'REPOR') { const finalQtd = qtdForcada || saldoRestanteReal, finalSacos = emb > 0 ? (finalQtd / emb) : 0; db.ref(`analise_nsa/pallets_ativos/${ihm}/slots/${idx}`).update({ status: targetStatus, qtdAlocada: finalQtd, sacos: finalSacos, qtdRetirada: null, devolvido: null }); } 
+            else if (modo === 'TROCAR' && dadosItemNovo) { const dadosAntigos = slotsAtuais[idx] || {}; db.ref(`analise_nsa/pallets_ativos/${ihm}/slots/${idx}`).set({ ...dadosAntigos, letra: s.letra, vazio: false, status: targetStatus, qtdAlocada: dadosItemNovo.qtdAlocada, sacos: dadosItemNovo.sacos, produto: dadosItemNovo.produto, qtdRetirada: null, devolvido: null, nivel: 'BAIXO' }); }
+            else { const dadosAntigos = slotsAtuais[idx] || {}; db.ref(`analise_nsa/pallets_ativos/${ihm}/slots/${idx}`).set({ ...dadosAntigos, letra: s.letra, vazio: true, qtdRetirada: null, devolvido: null }); }
+            closeModal();
+        };
+        
+        renderizarBotoes(false); modal.style.display = 'flex';
+    }
+}
+
+function gerarListaCandidatos(lista, slotsAtuais, itemAnteriorCode, limiteCapacidade, qtdAnterior = 0, restamFisicoAtual = 0) {
+    const ignorarNoSlot = new Set(); slotsAtuais.forEach((sl) => { if(!sl.vazio && sl.nivel !== 'CIMA' && sl.status !== 'USADO' && sl.status !== 'ABASTECENDO') ignorarNoSlot.add(sl.produto.codigo); });
+    const candidatos = [];
+    for(let item of lista) {
+        if(ignorarNoSlot.has(item.c)) continue;
+        let consumidoHistoricoOp = 0; Object.values(GLOBAL_CONSUMO).forEach(h => { if (h.ihm === item.ihm && String(h.codigo).trim() === String(item.c).trim() && h.status !== 'Devolvido') { consumidoHistoricoOp += parseFloat(h.qtd || 0); } }); 
+        let vizinhosCand = 0; slotsAtuais.forEach((sl) => { if(!sl.vazio && sl.nivel !== 'CIMA' && sl.status !== 'USADO' && sl.status !== 'ABASTECENDO' && sl.produto.codigo === item.c) { let aloc = parseFloat(sl.qtdAlocada||0); let ret = parseFloat(sl.qtdRetirada||0); if(sl.status==='USADO') ret=aloc; let restam = aloc-ret; if(restam>0) vizinhosCand += restam; } });
+        let sReal = item.req - (consumidoHistoricoOp + vizinhosCand); let limiteItem = limiteCapacidade;
+        if (item.c === itemAnteriorCode) { sReal = sReal - qtdAnterior; limiteItem = limiteCapacidade - restamFisicoAtual; if(limiteItem < 0) limiteItem = 0; }
+        
+        if (sReal <= 0.1) { const pesoFixo = item.emb > 0 ? item.emb : PESO_PADRAO; if (pesoFixo <= limiteItem) { candidatos.push({ produto: {codigo: item.c, nome: item.n, emb: item.emb}, qtdAlocada: pesoFixo, sacos: item.emb > 0 ? 1 : 0, isZerado: true, saldoReal: 0 }); } } 
+        else {
+            let qtdParaSlot = sReal; if (limiteItem && qtdParaSlot > limiteItem) { qtdParaSlot = limiteItem; } let nScs = 0, qtdFinal = 0;
+            if (item.emb > 0) { nScs = calcularSacosGlobais(qtdParaSlot, item.emb); qtdFinal = nScs * item.emb; if (qtdFinal > limiteItem) { nScs = Math.floor(limiteItem / item.emb); qtdFinal = nScs * item.emb; } } else if (sReal > 0.1) { qtdFinal = qtdParaSlot; nScs = 0; }
+            if (qtdFinal > 0) { candidatos.push({ produto: {codigo: item.c, nome: item.n, emb: item.emb}, qtdAlocada: qtdFinal, sacos: nScs, isZerado: false, saldoReal: sReal }); }
+        }
+    } return candidatos;
+}
+
+function closeModal() { document.getElementById('customModal').style.display = 'none'; document.getElementById('modalSuggestion').style.display = 'none'; }
+window.onclick = function(e) { if(e.target == document.getElementById('customModal')) closeModal(); }
+</script>
+</body>
+</html>
